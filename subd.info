@@ -1,0 +1,7 @@
+; $Id$
+name = SubD
+description = Does wicked things to map nodes on a page to subdomains.
+core = 7.x
+
+files[] = subd.module
+files[] = subd.install

@@ -1,0 +1,149 @@
+<?php
+
+/**
+ * Implementationation of hook_menu().
+ */
+function subd_menu() {
+  $items = array();
+  $items['subd-router'] = array(
+    'page callback' => 'subd_router_page',
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK,
+  );
+  return $items;
+}
+
+function subd_router_page() {
+  // If a node is found, swap in that node's content for the main page content.
+  // This is not madness. THIS IS DRUPAL 7!
+  if ($node = subd_get_current_node()) {
+    drupal_set_breadcrumb(array());
+    menu_set_active_item('node/' . $node->nid);
+    return node_page_view($node);
+  }
+  else {
+    // If there are no instances of the field defined, also bail out!
+    $field = field_info_field('subd_subdomain');
+    if (empty($field)) {
+      return FALSE;
+    }
+    // Get a list of all subdomain'd nodes.
+    $conditions = array(array('type', 'node'), array('value', 'NULL', '!='));
+    $results = field_attach_query($field['id'], $conditions);
+
+    if (!empty($results['node'])) {
+      $base_uri = _subd_get_base_domain();
+      foreach($results['node'] as $eid => $entity) {
+        $node = node_load($eid);
+        $subdomain = $node->subd_subdomain['und'][0]['value'];
+        $items[] = l($node->title, "http://$subdomain.$base_uri");
+        return theme('item_list', array('items' => $items));
+      }
+    }
+  }
+}
+
+function subd_get_current_node() {
+  // Sweet fuck, this is wrong and bad and wrong and more bad.
+  // But, you know. How to extract the subdomain? Oh, Drupal. This works well
+  // enough for a domain structure that is known and predictable.
+  
+  $uri = $_SERVER['HTTP_HOST'];
+  $parsed = explode('.', $uri);
+  if (count($parsed) > 2) {
+    $subdomain = array_shift($parsed);
+  }
+  else {
+    return FALSE;
+  }
+
+  // If there are no instances of the field defined, also bail out!
+  $field = field_info_field('subd_subdomain');
+  if (empty($field)) {
+    return FALSE;
+  }
+
+  // See if any nodes match the subdomain.
+  $conditions = array(array('type', 'node'), array('value', $subdomain, '='));
+  $results = field_attach_query($field['id'], $conditions);
+
+  if (!empty($results['node'])) {
+    foreach($results['node'] as $eid => $entity) {
+      return node_load($eid);
+    }
+  }
+  
+  return FALSE;
+}
+
+/**
+ * Add a 'Subdomain' field to a given content type
+ *
+ * @param $type
+ *  A node type object.
+ * @param $label
+ *  The label for the body instance.
+ */
+function subd_add_subdomain_field($type, $label = 'Subdomain') {
+  // Add or remove the body field, as needed.
+  $field = field_info_field('subd_subdomain');
+  $instance = field_info_instance('node', 'subd_subdomain', $type);
+  if (empty($field)) {
+   $field = array(
+    'field_name' => 'subd_subdomain',
+    'type' => 'text',
+    'entity_types' => array('node'),
+    'translatable' => FALSE,
+   );
+   $field = field_create_field($field);
+  }
+  if (empty($instance)) {
+   $instance = array(
+    'field_name' => 'subd_subdomain',
+    'entity_type' => 'node',
+    'bundle' => $type,
+    'label' => $label,
+    'widget_type' => 'text',
+    'settings' => array('required' => TRUE),
+
+    // Define default formatters for the teaser and full view.
+    'display' => array(
+      'full' => array(
+       'label' => 'hidden',
+       'type' => 'hidden',
+      ),
+      'teaser' => array(
+       'label' => 'hidden',
+       'type' => 'hidden',
+      ),
+      'rss' => array(
+       'label' => 'hidden',
+       'type' => 'hidden',
+      ),
+      'search_index' => array(
+       'label' => 'hidden',
+       'type' => 'default',
+      ),
+      'search_results' => array(
+       'label' => 'hidden',
+       'type' => 'hidden',
+      ),
+    ),
+   );
+   field_create_instance($instance);
+  }
+}
+
+function subd_preprocess_page(&$vars) {
+  $vars['front_page'] = 'http://' . _subd_get_base_domain();
+}
+
+function _subd_get_base_domain() {
+  $base_uri = $_SERVER['HTTP_HOST'];
+  $parsed = explode('.', $base_uri);
+  if (count($parsed) > 2) {
+    array_shift($parsed);
+    $base_uri = join('.', $parsed);
+  }
+  return $base_uri;
+}
